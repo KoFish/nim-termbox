@@ -147,6 +147,8 @@ proc tb_poll_event(event: ptr tb_event): cint
 # glib based interface
 # TODO
 # utility utf8 functions
+proc tb_blit(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell)
+proc tb_put_cell(x: cuint; y: cuint; cell: ptr tb_cell)
 
 {.push importc: "tb_$1".}
 
@@ -158,10 +160,8 @@ proc present*()
 const
   TB_HIDE_CURSOR* = - 1
 proc set_cursor*(cx: cint; cy: cint)
-proc put_cell*(x: cuint; y: cuint; cell: ptr tb_cell)
 proc change_cell*(x: cuint; y: cuint; ch: uint32; fg: uint16;
                      bg: uint16)
-proc blit*(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell)
 proc select_input_mode*(mode: TInputMode): TInputMode {.discardable.}
 proc set_clear_attributes*(fg: uint16; bg: uint16)
 
@@ -205,3 +205,9 @@ proc poll_event*(): TEvent {.raises: [E_TB].} =
 
 proc peek_event*(timeout : cuint): TEvent =
   discard tb_peek_event(result.addr, timeout)
+
+proc blit*(x: cuint; y: cuint; w: cuint; h: cuint; cells: var openarray[TCell]) =
+  tb_blit(x, y, w, h, cells[0].addr)
+
+proc put_cell*(x: cuint; y: cuint; cell: var TCell) =
+  tb_put_cell(x, y, cell.addr)
