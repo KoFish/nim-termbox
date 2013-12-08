@@ -81,9 +81,6 @@ const
 # #define TB_KEY_CTRL_1 clash with '1'
 # #define TB_KEY_CTRL_9 clash with '9'
 # #define TB_KEY_CTRL_0 clash with '0'
-# Currently there is only one modificator
-const
-  TB_MOD_ALT* = 0x00000001
 # colors
 const
   TB_BLACK* = 0x00000000
@@ -99,28 +96,36 @@ const
 const
   TB_BOLD* = 0x00000010
   TB_UNDERLINE* = 0x00000020
+  TB_REVERSE* = 0x00000040
 type
-  tb_cell* {.pure, final.} = object
+  TEventType* = enum
+    NO_EVENT = 0,
+    KEY_EVENT = 1,
+    RESIZE_EVENT = 2
+  TKeyModifier* = enum  # Currently there is only one modificator
+    MOD_NONE = 0x0000000,
+    MOD_ALT = 0x0000001
+  TInputMode* = enum
+    CURRENT_INPUT = 0,
+    ESC_INPUT = 1,
+    ALT_INPUT = 2
+
+type
+  tb_cell {.pure, final.} = object
     ch*: uint32
     fg*: uint16
     bg*: uint16
 
 type
-  tb_event* {.pure, final.} = object
-    kind*: uint8
-    modifier*: uint8
+  tb_event {.pure, final.} = object
+    kind*: TEventType
+    modifier*: TKeyModifier
     key*: uint16
     ch*: uint32
     w*: int32
     h*: int32
 
-const
-  TB_EUNSUPPORTED_TERMINAL* = - 1
-  TB_EFAILED_TO_OPEN_TTY* = - 2
-  TB_EPIPE_TRAP_ERROR* = - 3
-
-
-{.push callConv: cdecl, importc: "tb_$1".}
+{.push callConv: cdecl.}
 
 when defined(LinkStatically):
   {.passl: "-Wl,-Bstatic -ltermbox -Wl,-Bdynamic".}
@@ -128,7 +133,23 @@ when defined(LinkStatically):
 else:
   {.push dynlib: LibName.}
 
-proc init*(): cint
+proc tb_init(): cint
+proc tb_peek_event(event: ptr tb_event; timeout: cuint): cint
+proc tb_poll_event(event: ptr tb_event): cint
+# these return:
+# 0 - no events, no errors,
+# 1 - key event
+# 2 - resize event
+# -1 - error (input buffer overflow, discarded input)
+#
+#   timeout in milliseconds
+#
+# glib based interface
+# TODO
+# utility utf8 functions
+
+{.push importc: "tb_$1".}
+
 proc shutdown*()
 proc width*(): cuint
 proc height*(): cuint
@@ -141,28 +162,9 @@ proc put_cell*(x: cuint; y: cuint; cell: ptr tb_cell)
 proc change_cell*(x: cuint; y: cuint; ch: uint32; fg: uint16;
                      bg: uint16)
 proc blit*(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell)
-const
-  TB_INPUT_ESC* = 1
-  TB_INPUT_ALT* = 2
-# with 0 returns current input mode
-proc select_input_mode*(mode: cint): cint
+proc select_input_mode*(mode: TInputMode): TInputMode {.discardable.}
 proc set_clear_attributes*(fg: uint16; bg: uint16)
-const
-  TB_EVENT_KEY* = 1
-  TB_EVENT_RESIZE* = 2
-proc peek_event*(event: ptr tb_event; timeout: cuint): cint
-proc poll_event*(event: ptr tb_event): cint
-# these return:
-# 0 - no events, no errors,
-# 1 - key event
-# 2 - resize event
-# -1 - error (input buffer overflow, discarded input)
-#
-#   timeout in milliseconds
-#
-# glib based interface
-# TODO
-# utility utf8 functions
+
 const
   TB_EOF* = - 1
 
@@ -172,3 +174,34 @@ proc utf8_unicode_to_char*(outp: cstring; c: uint32): cint
 
 {.pop.}
 {.pop.}
+{.pop.}
+
+# Some light wrapping to make the library easier to use from Nimrod
+
+type
+  E_TB* = object of E_base
+
+type
+  TEvent* = tb_event
+  TCell* = tb_cell
+
+const
+  TB_EUNSUPPORTED_TERMINAL = - 1
+  TB_EFAILED_TO_OPEN_TTY = - 2
+  TB_EPIPE_TRAP_ERROR = - 3
+
+proc init*() {.raises: [E_TB].} =
+  let result : cint = tb_init()
+  case result
+    of TB_EFAILED_TO_OPEN_TTY: raise newException(E_TB, "Failed to open TTY")
+    of TB_EUNSUPPORTED_TERMINAL: raise newException(E_TB, "Unsupported terminal")
+    of TB_EPIPE_TRAP_ERROR: raise newException(E_TB, "Pipe trap error")
+    else: nil
+
+proc poll_event*(): TEvent {.raises: [E_TB].} =
+  let ret = tb_poll_event(result.addr)
+  if ret == -1:
+    raise newException(E_TB, "Error when polling for event")
+
+proc peek_event*(timeout : cuint): TEvent =
+  discard tb_peek_event(result.addr, timeout)
