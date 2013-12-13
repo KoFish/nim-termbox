@@ -1,5 +1,8 @@
 when defined(Linux):
-  const LibName = "libtermbox.so"
+  when defined(LinkStatically):
+    const LibName = "termbox"
+  else:
+    const LibName = "libtermbox.so"
 else:
   {.error: "This platform has not been accounted for in the termbox wrapper.".}
 
@@ -128,14 +131,16 @@ type
 {.push callConv: cdecl.}
 
 when defined(LinkStatically):
-  {.passl: "-Wl,-Bstatic -ltermbox -Wl,-Bdynamic".}
+  {.passl: "-Wl,-Bstatic -l" & LibName & " -Wl,-Bdynamic".}
   {.push header: "<termbox.h>".}
 else:
   {.push dynlib: LibName.}
 
-proc tb_init(): cint
-proc tb_peek_event(event: ptr tb_event; timeout: cuint): cint
-proc tb_poll_event(event: ptr tb_event): cint
+proc tb_init(): cint {.importc: "tb_init".}
+proc tb_blit(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell) {.importc: "tb_blit".}
+proc tb_put_cell(x: cuint; y: cuint; cell: ptr tb_cell) {.importc: "tb_put_cell".}
+proc tb_peek_event(event: ptr tb_event; timeout: cuint): cint {.importc: "tb_peek_event".}
+proc tb_poll_event(event: ptr tb_event): cint {.importc: "tb_poll_event".}
 # these return:
 # 0 - no events, no errors,
 # 1 - key event
@@ -147,8 +152,6 @@ proc tb_poll_event(event: ptr tb_event): cint
 # glib based interface
 # TODO
 # utility utf8 functions
-proc tb_blit(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell)
-proc tb_put_cell(x: cuint; y: cuint; cell: ptr tb_cell)
 
 {.push importc: "tb_$1".}
 
@@ -179,7 +182,7 @@ proc utf8_unicode_to_char*(outp: cstring; c: uint32): cint
 # Some light wrapping to make the library easier to use from Nimrod
 
 type
-  E_TB* = object of E_base
+  ETermBox* = object of E_Base
 
 type
   TEvent* = tb_event
@@ -190,18 +193,18 @@ const
   TB_EFAILED_TO_OPEN_TTY = - 2
   TB_EPIPE_TRAP_ERROR = - 3
 
-proc init*() {.raises: [E_TB].} =
+proc init*() {.raises: [ETermBox].} =
   let result : cint = tb_init()
   case result
-    of TB_EFAILED_TO_OPEN_TTY: raise newException(E_TB, "Failed to open TTY")
-    of TB_EUNSUPPORTED_TERMINAL: raise newException(E_TB, "Unsupported terminal")
-    of TB_EPIPE_TRAP_ERROR: raise newException(E_TB, "Pipe trap error")
+    of TB_EFAILED_TO_OPEN_TTY: raise newException(ETermBox, "Failed to open TTY")
+    of TB_EUNSUPPORTED_TERMINAL: raise newException(ETermBox, "Unsupported terminal")
+    of TB_EPIPE_TRAP_ERROR: raise newException(ETermBox, "Pipe trap error")
     else: nil
 
-proc poll_event*(): TEvent {.raises: [E_TB].} =
+proc poll_event*(): TEvent {.raises: [ETermBox].} =
   let ret = tb_poll_event(result.addr)
   if ret == -1:
-    raise newException(E_TB, "Error when polling for event")
+    raise newException(ETermBox, "Error when polling for event")
 
 proc peek_event*(timeout : cuint): TEvent =
   discard tb_peek_event(result.addr, timeout)
