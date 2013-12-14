@@ -135,11 +135,20 @@ when defined(LinkStatically):
 else:
   {.push dynlib: LibName.}
 
-proc tb_init(): cint {.importc: "tb_init".}
-proc tb_blit(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell) {.importc: "tb_blit".}
-proc tb_put_cell(x: cuint; y: cuint; cell: ptr tb_cell) {.importc: "tb_put_cell".}
-proc tb_peek_event(event: ptr tb_event; timeout: cuint): cint {.importc: "tb_peek_event".}
-proc tb_poll_event(event: ptr tb_event): cint {.importc: "tb_poll_event".}
+const
+  TB_HIDE_CURSOR* = - 1
+
+{.push importc: "$1".}
+proc tb_init(): cint
+proc tb_width(): cuint
+proc tb_height(): cuint
+proc tb_set_cursor(cx: cint; cy: cint)
+proc tb_change_cell(x: cuint; y: cuint; ch: uint32; fg: uint16; bg: uint16)
+proc tb_blit(x: cuint; y: cuint; w: cuint; h: cuint; cells: ptr tb_cell)
+proc tb_put_cell(x: cuint; y: cuint; cell: ptr tb_cell)
+proc tb_peek_event(event: ptr tb_event; timeout: cuint): cint
+proc tb_poll_event(event: ptr tb_event): cint
+{.pop.}
 # these return:
 # 0 - no events, no errors,
 # 1 - key event
@@ -155,15 +164,8 @@ proc tb_poll_event(event: ptr tb_event): cint {.importc: "tb_poll_event".}
 {.push importc: "tb_$1".}
 
 proc shutdown*()
-proc width*(): cuint
-proc height*(): cuint
 proc clear*()
 proc present*()
-const
-  TB_HIDE_CURSOR* = - 1
-proc set_cursor*(cx: cint; cy: cint)
-proc change_cell*(x: cuint; y: cuint; ch: uint32; fg: uint16;
-                     bg: uint16)
 proc select_input_mode*(mode: TInputMode): TInputMode {.discardable.}
 proc set_clear_attributes*(fg: uint16; bg: uint16)
 
@@ -200,6 +202,15 @@ proc init*() {.raises: [ETermBox].} =
     of TB_EPIPE_TRAP_ERROR: raise newException(ETermBox, "Pipe trap error")
     else: nil
 
+proc width*(): int = cast[int](tb_width())
+
+proc height*(): int = cast[int](tb_height())
+
+proc set_cursor*(x, y: int) = tb_set_cursor(cast[cint](x), cast[cint](y))
+
+proc change_cell*(x, y: int; ch: uint32; fg, bg: uint16) =
+  tb_change_cell(cast[cuint](x), cast[cuint](y), ch, fg, bg)
+
 proc poll_event*(): TEvent {.raises: [ETermBox].} =
   let ret = tb_poll_event(result.addr)
   if ret == -1:
@@ -208,8 +219,8 @@ proc poll_event*(): TEvent {.raises: [ETermBox].} =
 proc peek_event*(timeout : cuint): TEvent =
   discard tb_peek_event(result.addr, timeout)
 
-proc blit*(x: cuint; y: cuint; w: cuint; h: cuint; cells: var openarray[TCell]) =
-  tb_blit(x, y, w, h, cells[0].addr)
+proc blit*(x, y, w, h: int; cells: var seq[TCell]) =
+  tb_blit(cast[cuint](x), cast[cuint](y), cast[cuint](w), cast[cuint](h), cells[0].addr)
 
-proc put_cell*(x: cuint; y: cuint; cell: var TCell) =
-  tb_put_cell(x, y, cell.addr)
+proc put_cell*(x, y: int; cell: var TCell) =
+  tb_put_cell(cast[cuint](x), cast[cuint](y), cell.addr)
